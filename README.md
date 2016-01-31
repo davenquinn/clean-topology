@@ -1,6 +1,7 @@
 # Clean-Topology
 
-A python module to clean up a PostGIS topology.
-This owes a debt of gratitude to [Sandro Santilli's
-QGIS plugin](https://github.com/strk/qgis_pgis_topoedit) for the same
-purpose.
+A python CLI script to clean up spare nodes
+and edges in a PostGIS topology.
+This is a generalization of [Sandro Santilli's
+QGIS plugin](https://github.com/strk/
+qgis_pgis_topoedit) for the same purpose.
