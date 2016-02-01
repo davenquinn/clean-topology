@@ -4,7 +4,7 @@ import click
 from click import echo, secho
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.exc import ArgumentError,InternalError
+from sqlalchemy.exc import ArgumentError, InternalError, OperationalError
 
 def remove_node(conn, toponame, node_id):
     try:
@@ -53,28 +53,46 @@ def n_true(values):
         total += 1
     return n,total
 
-@click.command()
-@click.argument("db")
-@click.argument("topo_schema")
-def cli(db, topo_schema):
+def validate_database(ctx, param, value):
     try:
-        engine = create_engine(db)
+        engine = create_engine(value)
     except ArgumentError:
-        engine = create_engine("postgresql://localhost/"+db)
+        engine = create_engine("postgresql://localhost/"+value)
 
-    with engine.begin() as conn:
-        res = conn.execute("SELECT name FROM topology WHERE name = %s",(topo_schema,))
+    try:
+        engine.begin()
+    except OperationalError as err:
+        raise click.BadParameter(err.orig.message)
+    ctx.engine = engine
+    return engine
+
+def validate_topology(ctx,param,value):
+    with ctx.engine.begin() as conn:
+        res = conn.execute("SELECT name FROM topology WHERE name = %s",(value,))
         if res.rowcount != 1:
-            raise Exception("Topology matching the name was not found")
+            raise click.BadParameter("Topology {} was not found".format(value))
+        else:
+            return value
+
+@click.command()
+@click.option("--db",callback=validate_database,
+        required=True, help="Database name or connection string")
+@click.option("--topology", callback=validate_topology, required=True,
+        help="Name of a PostGIS topology schema")
+def cli(db, topology):
+    """
+    Script to clean disused nodes and edges of a PostGIS topology
+    """
+    engine = db
 
     with engine.begin() as conn:
-        edges = conn.execute("SELECT edge_id FROM {}.edge_data".format(topo_schema))
-        results = show_query_results(remove_edge(conn, topo_schema, edge_id) for edge_id, in edges)
+        edges = conn.execute("SELECT edge_id FROM {}.edge_data".format(topology))
+        results = show_query_results(remove_edge(conn, topology, edge_id) for edge_id, in edges)
         echo("Removed {} of {} edges".format(*n_true(results)))
 
     with engine.begin() as conn:
-        nodes = conn.execute("SELECT node_id FROM {}.node".format(topo_schema))
-        results = show_query_results(remove_node(conn, topo_schema, node_id)
+        nodes = conn.execute("SELECT node_id FROM {}.node".format(topology))
+        results = show_query_results(remove_node(conn, topology, node_id)
                 for node_id, in nodes)
         echo("Removed {} of {} nodes".format(*n_true(results)))
 
