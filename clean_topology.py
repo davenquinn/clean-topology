@@ -32,20 +32,26 @@ def remove_edge(conn,toponame,edge_id):
     except InternalError as e:
         return False
 
-def remove_over_query(engine, toponame, query, function):
-    with engine.begin() as conn:
-        res = conn.execute(query)
-        counter = 0
-        for edge_id in [i[0] for i in res.fetchall()]:
-            removed = function(conn, toponame, edge_id)
+def show_query_results(iterable):
+    """
+    Provides a graphical representation on the CLI of a large number
+    of operations. If the returned value is truthy, a representation of
+    the value is printed. If False, the record is represented as a dot.
+    """
+    for val in iterable:
+        if val:
+            secho("{}".format(val),fg='red', nl=False, bold=True)
+        else:
+            secho(".",fg='green', nl=False, bold=True)
+        yield val
+    echo("")
 
-            if removed:
-                counter += 1
-                secho("{}".format(edge_id),fg='red', nl=False, bold=True)
-            else:
-                secho(".",fg='green', nl=False, bold=True)
-        echo("")
-        echo("Removed {} of {} edges".format(counter,res.rowcount))
+def n_true(values):
+    n = total = 0
+    for i in values:
+        if i: n += 1
+        total += 1
+    return n,total
 
 @click.command()
 @click.argument("db")
@@ -61,8 +67,16 @@ def cli(db, topo_schema):
         if res.rowcount != 1:
             raise Exception("Topology matching the name was not found")
 
-    remove_over_query(engine, topo_schema, "SELECT edge_id FROM {}.edge_data".format(topo_schema),remove_edge)
-    remove_over_query(engine, topo_schema, "SELECT node_id FROM {}.node".format(topo_schema),remove_node)
+    with engine.begin() as conn:
+        edges = conn.execute("SELECT edge_id FROM {}.edge_data".format(topo_schema))
+        results = show_query_results(remove_edge(conn, topo_schema, edge_id) for edge_id, in edges)
+        echo("Removed {} of {} edges".format(*n_true(results)))
+
+    with engine.begin() as conn:
+        nodes = conn.execute("SELECT node_id FROM {}.node".format(topo_schema))
+        results = show_query_results(remove_node(conn, topo_schema, node_id)
+                for node_id, in nodes)
+        echo("Removed {} of {} nodes".format(*n_true(results)))
 
 if __name__ == '__main__':
     cli()
